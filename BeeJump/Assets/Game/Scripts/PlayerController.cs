@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections;
@@ -25,16 +24,17 @@ public class PlayerController : MonoBehaviour
     public Transform groundCheck;
     public float groundCheckRadius = 0.1f;
     public LayerMask groundLayer;
-
+    private bool isOnSlopeTrigger = false;
     // ?? state ??????????????????????????????????????????????????????????????????
-    private Rigidbody2D rb;
+    public Rigidbody2D rb;
     private int direction = -1;     // starts moving left on first jump
-    private bool canJump = true;
-    private bool isGrounded;
-    private bool isSliding;
+    public bool canJump = true;
+    public bool isGrounded;
+    public bool isSliding;
     private bool wasGrounded;       // to detect the moment of landing
     private Vector2 slopeNormal = Vector2.up;
     private bool isStunned = false;
+    private bool isJumping = false;
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
@@ -45,21 +45,33 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        // ?? jump input (new Input System) ??????????????????????????????????????
+        if (Keyboard.current.spaceKey.wasPressedThisFrame)
+            Debug.Log($"JUMP PRESSED — canJump={canJump} isGrounded={isGrounded} isStunned={isStunned}");
+
         if (Keyboard.current.spaceKey.wasPressedThisFrame && canJump)
         {
             rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
-            isGrounded = false;     // leave ground immediately
+            isJumping = true;
+            ExitSlope();
         }
     }
 
     void FixedUpdate()
     {
-        wasGrounded = isGrounded;
-        CheckGrounded();
+        isJumping = false;
+        bool wasGroundedThisFrame = Physics2D.OverlapCircle(
+            groundCheck.position, groundCheckRadius, groundLayer) != null
+            && !isOnSlopeTrigger;
 
-        // Regain jump the moment player touches ground after a stun
-        if (isGrounded && !canJump && !isStunned)
+        bool justLanded = !isGrounded && wasGroundedThisFrame;
+
+        isGrounded = wasGroundedThisFrame;
+        isSliding = isOnSlopeTrigger;
+
+        // Only trigger recovery the exact frame player lands
+        if (justLanded && !canJump && !isStunned)
+            StartCoroutine(StunRecovery());
+        else if (justLanded && isStunned)
             StartCoroutine(StunRecovery());
 
         ApplyHorizontalMovement();
@@ -67,12 +79,9 @@ public class PlayerController : MonoBehaviour
     }
     private IEnumerator StunRecovery()
     {
-        isStunned = true;
-        Debug.Log($"STATE: Stunned on ground — recovering for {groundedStunDuration}s");
         yield return new WaitForSeconds(groundedStunDuration);
         canJump = true;
         isStunned = false;
-        Debug.Log("STATE: Jump restored");
     }
     // ?? ground detection ???????????????????????????????????????????????????????
     void CheckGrounded()
@@ -80,97 +89,61 @@ public class PlayerController : MonoBehaviour
         Collider2D hit = Physics2D.OverlapCircle(
             groundCheck.position, groundCheckRadius, groundLayer);
 
-        if (hit != null)
-        {
-            RaycastHit2D ray = Physics2D.Raycast(
-                groundCheck.position, Vector2.down, 0.3f, groundLayer);
-            slopeNormal = ray.collider != null ? ray.normal : Vector2.up;
-
-            float slopeAngle = Vector2.Angle(slopeNormal, Vector2.up);
-
-            if (slopeAngle > slopeAngleThreshold)
-            {
-                isGrounded = false;     // slope = NOT grounded in your definition
-                isSliding = true;
-            }
-            else
-            {
-                isGrounded = true;      // flat floor = truly grounded, player stops
-                isSliding = false;
-            }
-        }
-        else
-        {
-            isGrounded = false;
-            isSliding = false;
-        }
+        isGrounded = hit != null && !isOnSlopeTrigger;
+        isSliding = isOnSlopeTrigger;
+        if (isSliding && !isStunned)
+            canJump = true;
     }
 
     // ?? horizontal movement ????????????????????????????????????????????????????
     void ApplyHorizontalMovement()
     {
+        if (isSliding)
+        {
+            rb.linearVelocity = slopeNormal * moveSpeed;
+            Debug.Log($"STATE: Sliding | dir={slopeNormal}");
+            return;
+        }
+
         if (isGrounded)
         {
-            // Flat ground — completely stop, player is "stuck"
+            // Only kill horizontal — never touch Y so jump velocity survives
             rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
-            Debug.Log("STATE: Grounded (stuck)");
+            Debug.Log("STATE: Grounded");
+            return;
         }
-        else if (isSliding)
-        {
-            Vector2 slopeDir = new Vector2(slopeNormal.y, -slopeNormal.x);
-            if (slopeDir.y > 0f) slopeDir = -slopeDir;
 
-            // Push player into the slope surface to prevent bounce/jitter
-            Vector2 intoSlope = -slopeNormal * 2f;
+        // Airborne
+        rb.linearVelocity = new Vector2(direction * moveSpeed, rb.linearVelocity.y);
 
-            rb.linearVelocity = Vector2.Lerp(
-                rb.linearVelocity,
-                (slopeDir * moveSpeed) + intoSlope,
-                slideFriction
-            );
-            Debug.Log($"STATE: Sliding down | vel={rb.linearVelocity}");
-        }
-        else
-        {
-            // Airborne — move horizontally at full speed (gliding)
-            rb.linearVelocity = new Vector2(direction * moveSpeed, rb.linearVelocity.y);
-
-            if (rb.linearVelocity.y < -0.1f && !canJump)
-                Debug.Log("STATE: Falling (stunned, no jump)");
-            else if (rb.linearVelocity.y < -0.1f)
-                Debug.Log("STATE: Gliding down");
-            else if (rb.linearVelocity.y > 0.1f)
-                Debug.Log("STATE: Rising");
-        }
+        if (rb.linearVelocity.y < -0.1f && !canJump)
+            Debug.Log("STATE: Falling (stunned)");
+        else if (rb.linearVelocity.y < -0.1f)
+            Debug.Log("STATE: Gliding");
+        else if (rb.linearVelocity.y > 0.1f)
+            Debug.Log("STATE: Rising");
     }
 
     // ?? gravity ????????????????????????????????????????????????????????????????
     void ApplyGravity()
     {
+        if (isSliding) return;
+
+        // Only zero velocity when truly sitting still on ground
         if (isGrounded && rb.linearVelocity.y <= 0f)
         {
-            rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
+            rb.linearVelocity = Vector2.zero;
             return;
         }
 
         float grav = Physics2D.gravity.y * gravityScale;
 
         if (!canJump && rb.linearVelocity.y < 0f)
-        {
-            // Stunned fall — drops fast
             grav *= fallMultiplier;
-        }
-        else if (rb.linearVelocity.y < 0f && canJump)
-        {
-            // Gliding down — still floaty but controlled
+        else if (canJump && rb.linearVelocity.y < 0f)
             grav = Physics2D.gravity.y * glideGravityScale;
-        }
         else if (rb.linearVelocity.y > 0f)
-        {
-            // Rising after jump — apply extra gravity to cut the floaty rise
-            // This makes the jump feel snappy and punchy instead of balloonlike
-            grav *= 1.8f;   // expose this as a variable if you want to tune it
-        }
+            grav *= 1.8f;
 
         rb.linearVelocity += Vector2.up * grav * Time.fixedDeltaTime;
     }
@@ -180,35 +153,68 @@ public class PlayerController : MonoBehaviour
     {
         foreach (ContactPoint2D contact in col.contacts)
         {
-            float angle = Vector2.Angle(contact.normal, Vector2.up);
+            float angle = Mathf.Abs(col.transform.eulerAngles.z);
+            if (angle > 180f) angle = 360f - angle;
 
-            // Wall hit ? flip direction (your existing logic)
-            if (Mathf.Abs(contact.normal.x) > 0.5f)
+            if (Mathf.Abs(contact.normal.x) > 0.7f)
             {
+                // Wall hit — flip and immediately push away from wall
                 direction *= -1;
+                // Force velocity away from wall, preserve Y completely
                 rb.linearVelocity = new Vector2(direction * moveSpeed, rb.linearVelocity.y);
-                return;
-            }
-
-            // Slope hit ? kill all velocity, immediately push down the slope
-            if (angle > slopeAngleThreshold && angle < 85f)
-            {
-                Vector2 slopeDir = new Vector2(contact.normal.y, -contact.normal.x);
-                if (slopeDir.y > 0f) slopeDir = -slopeDir;   // always downhill
-
-                direction = slopeDir.x > 0f ? 1 : -1;
-                rb.linearVelocity = Vector2.zero;
-                isSliding = true;
+                if (contact.normal.y < -0.7f)
+                {
+                    rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
+                    return;
+                }
                 return;
             }
         }
     }
+    void OnCollisionStay2D(Collision2D col)
+    {
+        foreach (ContactPoint2D contact in col.contacts)
+        {
+            // Wall — push away
+            if (Mathf.Abs(contact.normal.x) > 0.7f)
+            {
+                direction = contact.normal.x > 0f ? 1 : -1;
+                rb.linearVelocity = new Vector2(direction * moveSpeed, rb.linearVelocity.y);
+                return;
+            }
 
+            // Ceiling hit — kill upward velocity immediately so gravity pulls him down
+            if (contact.normal.y < -0.7f)
+            {
+                rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
+                return;
+            }
+        }
+    }
+    public void EnterSlope(Vector2 slideDirection)
+    {
+        isOnSlopeTrigger = true;
+        slopeNormal = slideDirection.normalized;
+        rb.linearVelocity = Vector2.zero;
+        direction = slideDirection.x > 0f ? 1 : -1;
+
+        // Never restore jump through slope if stunned
+        if (!isStunned)
+            canJump = true;
+    }
+
+
+    public void ExitSlope()
+    {
+        isOnSlopeTrigger = false;
+        slopeNormal = Vector2.up;
+    }
     // ?? called by hazards ??????????????????????????????????????????????????????
     public void OnHitHazard()
     {
         canJump = false;
-        isStunned = false;   // reset so StunRecovery can trigger fresh on next landing
+        isStunned = true;
+        StopAllCoroutines();
     }
 
     void OnDrawGizmosSelected()

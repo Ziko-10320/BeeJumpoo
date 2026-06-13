@@ -17,13 +17,19 @@ public class CameraFollow : MonoBehaviour
 
     [Header("Lookahead Settings")]
     [Tooltip("Assign the Player object here so the camera can check if it's grappling.")]
-   
- 
-   
+
+    [Header("State Offsets")]
+    [SerializeField] private float glideYOffset = -2f;     // how far down when gliding
+    [SerializeField] private float fallYOffset = -4f;      // how far down when stunned falling
+    [SerializeField] private float offsetSmoothSpeed = 3f; // how fast offset transitions
+
+    private float currentYOffset = 0f;
+    [SerializeField] private PlayerController player;
+
 
 
     // --- Private State Variables ---
-   
+
     private float holdTimer = 0f;
     private Vector2 panDirection = Vector2.zero;
     
@@ -42,29 +48,38 @@ public class CameraFollow : MonoBehaviour
             return;
         }
 
-        // --- 1. HANDLE ALL CAMERA PANNING LOGIC ---
+        // --- 1. FIGURE OUT TARGET Y OFFSET BASED ON PLAYER STATE ---
+        float targetYOffset = 0f;
 
+        if (player != null)
+        {
+            if (!player.canJump && !player.isGrounded)
+                targetYOffset = fallYOffset;       // stunned falling
+            else if (player.canJump && !player.isGrounded
+                     && player.rb.linearVelocity.y < 0f)
+                targetYOffset = glideYOffset;      // gliding down
+        }
+
+        // Smoothly lerp toward the target offset
+        currentYOffset = Mathf.Lerp(currentYOffset, targetYOffset,
+                                    offsetSmoothSpeed * Time.deltaTime);
 
         // --- 2. CALCULATE DESIRED POSITION ---
         Vector3 desiredPosition = new Vector3(
-      target.position.x + baseOffset.x,
-      target.position.y + baseOffset.y,
-      baseOffset.z);
-        // --- 3. APPLY Y-AXIS LOCK (IF ENABLED) ---
+            target.position.x + baseOffset.x,
+            target.position.y + baseOffset.y + currentYOffset,
+            baseOffset.z);
+
+        // --- 3. APPLY X-AXIS LOCK (IF ENABLED) ---
         if (lockXAxis)
-        {
             desiredPosition.x = transform.position.x;
-        }
 
         // --- 4. SMOOTHLY MOVE THE CAMERA ---
-        Vector3 smoothedPosition = Vector3.Lerp(transform.position, desiredPosition, smoothSpeed);
-
-        // --- 5. APPLY THE FINAL POSITION ---
-        transform.position = smoothedPosition;
+        transform.position = Vector3.Lerp(transform.position, desiredPosition, smoothSpeed);
     }
 
     // --- THIS IS THE NEW, UNIFIED FUNCTION ---
-   
+
 
     public void SetTarget(Transform newTarget)
     {
