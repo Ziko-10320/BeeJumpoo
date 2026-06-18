@@ -1,55 +1,56 @@
 using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class Projectile : MonoBehaviour
 {
-    [Header("Movement")]
-    public float speed = 6f;
-    public float lifetime = 5f;            // auto destroy if it hits nothing
-
+    private Vector2 direction;
+    private float speed;
+    private Rigidbody2D rb;
     [Header("Knockback")]
     public float knockbackForce = 8f;
     public float knockbackUpForce = 5f;
 
-    private Vector2 direction;
-
-    void Start()
+    public void Init(Vector2 dir, float spd, float lifetime)
     {
+        direction = dir.normalized;
+        speed = spd;
         Destroy(gameObject, lifetime);
     }
 
-    public void SetDirection(Vector2 dir)
+    void Awake()
     {
-        direction = dir.normalized;
+        rb = GetComponent<Rigidbody2D>();
+        rb.bodyType = RigidbodyType2D.Kinematic;
+        rb.gravityScale = 0f;
+
+        Collider2D col = GetComponent<Collider2D>();
+        col.isTrigger = true;
     }
 
     void Update()
     {
-        transform.Translate(direction * speed * Time.deltaTime);
+        rb.MovePosition(rb.position + direction * speed * Time.deltaTime);
     }
 
     void OnTriggerEnter2D(Collider2D other)
     {
-        // Hit player
         PlayerController player = other.GetComponent<PlayerController>();
+
         if (player != null)
         {
-            Rigidbody2D rb = other.GetComponent<Rigidbody2D>();
+            Rigidbody2D playerRb = other.GetComponent<Rigidbody2D>();
 
-            float knockDir = -Mathf.Sign(rb.linearVelocity.x);
+            float knockDir = -Mathf.Sign(direction.x);
             if (knockDir == 0f) knockDir = -1f;
 
-            rb.linearVelocity = new Vector2(
+            playerRb.linearVelocity = new Vector2(
                 knockDir * knockbackForce,
                 knockbackUpForce
             );
 
             player.OnHitHazard();
-            Destroy(gameObject);
-            return;
         }
 
-        // Hit ground or wall — destroy on any non-player collider
-        if (!other.isTrigger)
-            Destroy(gameObject);
+        Destroy(gameObject);
     }
 }

@@ -12,7 +12,17 @@ public class WaypointHazard : MonoBehaviour
     [Header("Loop Type")]
     public bool loop = true;             // true = 1 2 3 4 1 2 3 4
                                          // false = 1 2 3 4 3 2 1 (ping pong)
+    [Header("Path Type")]
+    public PathType pathType = PathType.Waypoints;
+    public enum PathType { Waypoints, Circle }
 
+    [Header("Circle Settings")]
+    public float circleRadius = 2f;
+    public float circleSpeed = 90f;          // degrees per second
+    public bool clockwise = true;
+
+    private Vector3 circleCenter;
+    private float currentAngle = 0f;
     [Header("Knockback")]
     public float knockbackForce = 8f;
     public float knockbackUpForce = 5f;
@@ -25,15 +35,26 @@ public class WaypointHazard : MonoBehaviour
 
     void Start()
     {
+        if (pathType == PathType.Circle)
+        {
+            circleCenter = transform.position;
+            return;
+        }
+
         if (waypoints.Length == 0) return;
         transform.position = waypoints[0].position;
     }
 
     void Update()
     {
+        if (pathType == PathType.Circle)
+        {
+            UpdateCircle();
+            return;
+        }
+
         if (waypoints.Length < 2) return;
 
-        // ?? idle at waypoint ???????????????????????????????????????????????????
         if (isWaiting)
         {
             waitTimer -= Time.deltaTime;
@@ -42,12 +63,10 @@ public class WaypointHazard : MonoBehaviour
             return;
         }
 
-        // ?? move toward current target waypoint ????????????????????????????????
         Vector3 target = waypoints[currentIndex].position;
         transform.position = Vector3.MoveTowards(
             transform.position, target, speed * Time.deltaTime);
 
-        // ?? reached waypoint ???????????????????????????????????????????????????
         if (Vector3.Distance(transform.position, target) < 0.05f)
         {
             transform.position = target;
@@ -55,6 +74,16 @@ public class WaypointHazard : MonoBehaviour
             waitTimer = waitTime;
             AdvanceIndex();
         }
+    }
+    void UpdateCircle()
+    {
+        float dir = clockwise ? -1f : 1f;
+        currentAngle += circleSpeed * dir * Time.deltaTime;
+
+        float rad = currentAngle * Mathf.Deg2Rad;
+        Vector3 offset = new Vector3(Mathf.Cos(rad), Mathf.Sin(rad), 0f) * circleRadius;
+
+        transform.position = circleCenter + offset;
     }
 
     void AdvanceIndex()
@@ -104,6 +133,26 @@ public class WaypointHazard : MonoBehaviour
     // ?? draw path in editor so u can see it ???????????????????????????????????
     void OnDrawGizmos()
     {
+        if (pathType == PathType.Circle)
+        {
+            Vector3 center = Application.isPlaying ? circleCenter : transform.position;
+            Gizmos.color = Color.cyan;
+
+            Vector3 prevPoint = center + new Vector3(circleRadius, 0f, 0f);
+            int segments = 32;
+
+            for (int i = 1; i <= segments; i++)
+            {
+                float angle = (360f / segments) * i * Mathf.Deg2Rad;
+                Vector3 point = center + new Vector3(
+                    Mathf.Cos(angle) * circleRadius,
+                    Mathf.Sin(angle) * circleRadius, 0f);
+                Gizmos.DrawLine(prevPoint, point);
+                prevPoint = point;
+            }
+            return;
+        }
+
         if (waypoints == null || waypoints.Length < 2) return;
 
         Gizmos.color = Color.red;
@@ -115,7 +164,6 @@ public class WaypointHazard : MonoBehaviour
         }
         Gizmos.DrawWireSphere(waypoints[waypoints.Length - 1].position, 0.15f);
 
-        // Draw loop closing line
         if (loop && waypoints[0] != null && waypoints[waypoints.Length - 1] != null)
         {
             Gizmos.color = new Color(1f, 0f, 0f, 0.3f);

@@ -105,7 +105,7 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        if (isGrounded)
+        if (isGrounded && rb.linearVelocity.y <= 0.1f)
         {
             // Only kill horizontal — never touch Y so jump velocity survives
             rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
