@@ -1,10 +1,12 @@
 using UnityEngine;
-
+using System.Collections;
 public class EnemyShooter : MonoBehaviour
 {
     [Header("Projectile")]
     public GameObject projectilePrefab;
-
+    [Header("Spawn Fade")]
+    public float fadeInDuration = 1f;
+    private SpriteRenderer spriteRenderer;
     [Header("Fire Settings")]
     public float fireRate = 2f;
     public float projectileSpeed = 6f;
@@ -18,10 +20,32 @@ public class EnemyShooter : MonoBehaviour
 
     void Start()
     {
+        spriteRenderer = GetComponent<SpriteRenderer>();
         // Random offset so multiple enemies dont fire in sync
         fireTimer = Random.Range(0f, fireRate);
-    }
+        StartCoroutine(FadeIn());
 
+    }
+    IEnumerator FadeIn()
+    {
+        if (spriteRenderer == null) yield break;
+
+        float elapsed = 0f;
+        Color c = spriteRenderer.color;
+
+        // Start fully transparent
+        spriteRenderer.color = new Color(c.r, c.g, c.b, 0f);
+
+        while (elapsed < fadeInDuration)
+        {
+            elapsed += Time.deltaTime;
+            float alpha = elapsed / fadeInDuration;
+            spriteRenderer.color = new Color(c.r, c.g, c.b, alpha);
+            yield return null;
+        }
+
+        spriteRenderer.color = new Color(c.r, c.g, c.b, 1f);
+    }
     void Update()
     {
         fireTimer += Time.deltaTime;

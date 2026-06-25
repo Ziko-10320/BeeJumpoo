@@ -4,7 +4,9 @@ public class WaypointHazard : MonoBehaviour
 {
     [Header("Waypoints")]
     public Transform[] waypoints;
-
+    [Header("Path Visibility")]
+    public bool showPathInGame = false;
+    private LineRenderer pathLine;
     [Header("Movement")]
     public float speed = 3f;
     public float waitTime = 0.5f;        // how long to idle at each point
@@ -38,13 +40,77 @@ public class WaypointHazard : MonoBehaviour
         if (pathType == PathType.Circle)
         {
             circleCenter = transform.position;
+            if (showPathInGame) InitPathLine();
             return;
         }
 
         if (waypoints.Length == 0) return;
         transform.position = waypoints[0].position;
+        if (showPathInGame) InitPathLine();
+    }
+    void InitPathLine()
+    {
+        pathLine = gameObject.AddComponent<LineRenderer>();
+        pathLine.startWidth = 0.05f;
+        pathLine.endWidth = 0.05f;
+        pathLine.useWorldSpace = true;
+        pathLine.material = new Material(Shader.Find("Sprites/Default"));
+        pathLine.startColor = Color.white;
+        pathLine.endColor = Color.white;
+        pathLine.sortingOrder = -1;
+
+        if (pathType == PathType.Circle)
+        {
+            pathLine.loop = true;
+            int segments = 64;
+            pathLine.positionCount = segments;
+
+            for (int i = 0; i < segments; i++)
+            {
+                float angle = (360f / segments) * i * Mathf.Deg2Rad;
+                pathLine.SetPosition(i, circleCenter + new Vector3(
+                    Mathf.Cos(angle) * circleRadius,
+                    Mathf.Sin(angle) * circleRadius,
+                    0f));
+            }
+        }
+        else
+        {
+            pathLine.loop = loop;
+            pathLine.positionCount = waypoints.Length;
+            for (int i = 0; i < waypoints.Length; i++)
+                pathLine.SetPosition(i, waypoints[i].position);
+        }
     }
 
+    void UpdatePathLine()
+    {
+        if (pathLine == null) return;
+
+        if (pathType == PathType.Circle)
+        {
+            int segments = 64;
+            pathLine.positionCount = segments;
+            Vector3 center = Application.isPlaying ? circleCenter : transform.position;
+
+            for (int i = 0; i < segments; i++)
+            {
+                float angle = (360f / segments) * i * Mathf.Deg2Rad;
+                Vector3 point = center + new Vector3(
+                    Mathf.Cos(angle) * circleRadius,
+                    Mathf.Sin(angle) * circleRadius,
+                    0f);
+                pathLine.SetPosition(i, point);
+            }
+            return;
+        }
+
+        if (waypoints == null || waypoints.Length < 2) return;
+        pathLine.loop = false;
+        pathLine.positionCount = waypoints.Length;
+        for (int i = 0; i < waypoints.Length; i++)
+            pathLine.SetPosition(i, waypoints[i].position);
+    }
     void Update()
     {
         if (pathType == PathType.Circle)

@@ -215,6 +215,12 @@ public class PlayerController : MonoBehaviour
         canJump = false;
         isStunned = true;
         StopAllCoroutines();
+        BossRoomManager boss = FindObjectOfType<BossRoomManager>();
+        if (boss != null)
+        {
+            boss.PlayerDied();
+            return;
+        }
     }
 
     void OnDrawGizmosSelected()
